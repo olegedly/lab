@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"trymcp/internal/weather"
 
@@ -97,13 +98,95 @@ func HandleWeather(ctx context.Context, _ *mcp.CallToolRequest, input WeatherInp
 		}
 	}
 
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s, %s — %d-day forecast\n\n", geo.Name, geo.Country, input.ForecastDays)
+	fmt.Fprintf(&b, "Current: %.1f°C (feels like %.1f°C), %s, humidity %.0f%%, wind %.1f km/h",
+		forecast.Current.Temperature2m,
+		forecast.Current.ApparentTemperature,
+		wmoDescription(forecast.Current.WeatherCode),
+		forecast.Current.RelativeHumidity2m,
+		forecast.Current.WindSpeed10m,
+	)
+
+	for i := range forecast.Daily.Time {
+		fmt.Fprintf(&b, "\n\n%s: High %.1f°C / Low %.1f°C, %s, %.1f mm rain",
+			forecast.Daily.Time[i],
+			forecast.Daily.Temperature2mMax[i],
+			forecast.Daily.Temperature2mMin[i],
+			wmoDescription(forecast.Daily.WeatherCode[i]),
+			forecast.Daily.PrecipitationSum[i],
+		)
+	}
+
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
-			&mcp.TextContent{Text: fmt.Sprintf("Weather in %s: %.1f°C, feels like %.1f°C",
-				geo.Name, forecast.Current.Temperature2m, forecast.Current.ApparentTemperature)},
+			&mcp.TextContent{Text: b.String()},
 		},
 		StructuredContent: output,
 	}, nil, nil
+}
+
+func wmoDescription(code float64) string {
+	switch int(code) {
+	case 0:
+		return "clear sky"
+	case 1:
+		return "mainly clear"
+	case 2:
+		return "partly cloudy"
+	case 3:
+		return "overcast"
+	case 45:
+		return "foggy"
+	case 48:
+		return "rime fog"
+	case 51:
+		return "light drizzle"
+	case 53:
+		return "moderate drizzle"
+	case 55:
+		return "dense drizzle"
+	case 56:
+		return "light freezing drizzle"
+	case 57:
+		return "dense freezing drizzle"
+	case 61:
+		return "slight rain"
+	case 63:
+		return "moderate rain"
+	case 65:
+		return "heavy rain"
+	case 66:
+		return "light freezing rain"
+	case 67:
+		return "heavy freezing rain"
+	case 71:
+		return "slight snow"
+	case 73:
+		return "moderate snow"
+	case 75:
+		return "heavy snow"
+	case 77:
+		return "snow grains"
+	case 80:
+		return "slight rain showers"
+	case 81:
+		return "moderate rain showers"
+	case 82:
+		return "violent rain showers"
+	case 85:
+		return "slight snow showers"
+	case 86:
+		return "heavy snow showers"
+	case 95:
+		return "thunderstorm"
+	case 96:
+		return "thunderstorm with slight hail"
+	case 99:
+		return "thunderstorm with heavy hail"
+	default:
+		return "unknown"
+	}
 }
 
 func errorResult(domain string, err error) *mcp.CallToolResult {
