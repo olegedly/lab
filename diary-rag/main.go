@@ -1,16 +1,40 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
-	"strconv"
 
-	"diary-rag/pkg/embed"
-	"diary-rag/pkg/parser"
-	"diary-rag/pkg/traverse"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"diary-rag/pkg/search"
 )
+
+// resolvePath makes a relative path absolute by resolving against the binary's
+// own directory. This ensures the binary works regardless of the caller's
+// working directory (important for MCP stdio transport).
+func resolvePath(path string) string {
+	if filepath.IsAbs(path) {
+		return path
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return path
+	}
+	return filepath.Join(filepath.Dir(exe), path)
+}
+
+// App holds the application state shared across MCP tool handlers.
+type App struct {
+	searcher   *search.Searcher
+	rootDir    string
+	embedURL   string
+	embedModel string
+	outputDir  string
+}
 
 func main() {
 	rootDir := flag.String("dir", "/home/morket/0mni/1. Life Admin/12. Logging/11. Diary", "root directory of markdown diary files")
@@ -19,57 +43,31 @@ func main() {
 	outputDir := flag.String("output", "output", "output directory for JSON files")
 	flag.Parse()
 
-	if err := os.MkdirAll(*outputDir, 0755); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create output directory: %v\n", err)
-		os.Exit(1)
+	app := &App{
+		rootDir:    resolvePath(*rootDir),
+		embedURL:   *embedURL,
+		embedModel: *embedModel,
+		outputDir:  resolvePath(*outputDir),
 	}
 
-	var allChunks []parser.Chunk
-	if err := traverse.TraverseAndProcessMarkdown(*rootDir, func(content, filename, path string) error {
-		chunks := parser.ParseNoteToChunks(content, filename, path)
-		allChunks = append(allChunks, chunks...)
-		return nil
-	}); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to process markdown: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Assign global indices now that all chunks are collected
-	for i := range allChunks {
-		allChunks[i].Metadata["globalIndex"] = strconv.Itoa(i)
-	}
-
-	fmt.Printf("Successfully processed %d chunks.\n", len(allChunks))
-
-	if err := WriteJson(allChunks, filepath.Join(*outputDir, "chunks.json")); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-		os.Exit(1)
-	}
-
-	justTexts := make([]string, len(allChunks))
-	for i, chunk := range allChunks {
-		justTexts[i] = chunk.Text
-	}
-
-	embeddings, err := embed.GetEmbeddings(justTexts, *embedURL, *embedModel)
+	corpusPath := filepath.Join(app.outputDir, "chunksWithEmbeddings.json")
+	searcher, err := search.LoadFromFile(corpusPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to get embeddings: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("Failed to load corpus: %v. Run the reindex_diary tool first.", err)
 	}
+	app.searcher = searcher
 
-	if err := WriteJson(embeddings, filepath.Join(*outputDir, "embeddings.json")); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-		os.Exit(1)
-	}
+	server := mcp.NewServer(&mcp.Implementation{
+		Name:    "diary-rag",
+		Version: "1.0.0",
+	}, nil)
 
-	chunksWithEmbeddings, err := AttachEmbeddingsToChunks(allChunks, embeddings)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to attach embeddings: %v\n", err)
-		os.Exit(1)
-	}
+	RegisterSearchTool(server, app)
+	RegisterReindexTool(server, app)
+	RegisterReadNoteTool(server)
 
-	if err := WriteJson(chunksWithEmbeddings, filepath.Join(*outputDir, "chunksWithEmbeddings.json")); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-		os.Exit(1)
+	fmt.Fprintf(os.Stderr, "diary-rag MCP server started (dir=%s, output=%s)\n", app.rootDir, app.outputDir)
+	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
+		log.Fatalf("server stopped: %v", err)
 	}
 }
