@@ -12,6 +12,8 @@ import (
 // It receives the file's text content, its filename, and its full path.
 type ProcessMarkdownFunc func(content string, filename string, path string) error
 
+var GlobalIndex = 0
+
 // TraverseAndProcessMarkdown recursively walks the tree starting at rootDir.
 // For every ".md" file it encounters, it reads the content and calls processFn.
 func TraverseAndProcessMarkdown(rootDir string, processFn ProcessMarkdownFunc) error {

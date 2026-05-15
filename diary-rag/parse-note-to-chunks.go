@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strconv"
 	"strings"
 )
 
@@ -64,6 +65,7 @@ func ParseNoteToChunks(content string, filename string, path string) []Chunk {
 	// Split by double newlines to isolate individual paragraphs
 	paragraphs := strings.Split(bodyText, "\n\n")
 
+	var chunkIndex = 0
 	for _, p := range paragraphs {
 		// Trim each paragraph and ignore any empty ones created by extra line breaks
 		cleanParagraph := strings.TrimSpace(p)
@@ -71,12 +73,16 @@ func ParseNoteToChunks(content string, filename string, path string) []Chunk {
 			chunks = append(chunks, Chunk{
 				Text: cleanParagraph,
 				Metadata: map[string]string{
-					"date":     date,
-					"journal":  journalType,
-					"filename": filename,
-					"path":     path,
+					"journal":     journalType,
+					"date":        date,
+					"globalIndex": strconv.Itoa(GlobalIndex),
+					"chunkIndex":  strconv.Itoa(chunkIndex),
+					"path":        path,
+					"filename":    filename,
 				},
 			})
+			chunkIndex += 1
+			GlobalIndex += 1
 		}
 	}
 
