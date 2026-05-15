@@ -14,8 +14,10 @@ import (
 )
 
 type SearchInput struct {
-	Query string `json:"query" jsonschema:"natural language query describing the topic, event, or feeling to search for,required"`
-	TopK  int    `json:"top_k" jsonschema:"number of results to return (default 5, max 50)"`
+	Query  string `json:"query" jsonschema:"natural language query describing the topic, event, or feeling to search for,required"`
+	TopK   int    `json:"top_k" jsonschema:"number of results to return (default 5, max 50)"`
+	Before string `json:"before,omitempty" jsonschema:"only return entries dated on or before this date (YYYY-MM-DD). When set, only 'daily' journal entries are searched."`
+	After  string `json:"after,omitempty" jsonschema:"only return entries dated on or after this date (YYYY-MM-DD). When set, only 'daily' journal entries are searched."`
 }
 
 type SearchOutput struct {
@@ -41,7 +43,7 @@ type ReadNoteOutput struct {
 func RegisterSearchTool(server *mcp.Server, app *App) error {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "search_diary",
-		Description: "Search diary/journal entries by semantic similarity (not keyword matching). Use when you need to find entries about a specific topic, event, person, or feeling the user wrote about. Returns text snippets with relevance scores (0-1), dates, journal types, and file identifiers. The returned 'path' and 'filename' fields can be passed directly to read_note to retrieve full entry contents.",
+		Description: "Search diary/journal entries by semantic similarity (not keyword matching). Use when you need to find entries about a specific topic, event, person, or feeling. Supports optional date filtering via 'before' and 'after' (YYYY-MM-DD). Returns text snippets with relevance scores (0-1), dates, journal types, and file identifiers. The returned 'path' and 'filename' fields map directly to read_note inputs.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input SearchInput) (*mcp.CallToolResult, SearchOutput, error) {
 		if input.TopK <= 0 || input.TopK > 50 {
 			input.TopK = 5
@@ -52,7 +54,12 @@ func RegisterSearchTool(server *mcp.Server, app *App) error {
 			return errorResult[SearchOutput](fmt.Sprintf("embedding error: %v", err))
 		}
 
-		results := app.searcher.Search(queryEmbeddings[0], input.TopK)
+		opts := search.SearchOptions{
+			TopK:   input.TopK,
+			Before: input.Before,
+			After:  input.After,
+		}
+		results := app.searcher.Search(queryEmbeddings[0], opts)
 		return successResult(SearchOutput{Results: results})
 	})
 	return nil
@@ -61,7 +68,7 @@ func RegisterSearchTool(server *mcp.Server, app *App) error {
 func RegisterReindexTool(server *mcp.Server, app *App) error {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "reindex_diary",
-		Description: "Rebuild the full diary search index. Call this after adding new diary entries or editing existing ones so the index reflects the latest content. Rescans all markdown files, recomputes all embeddings via the API, and atomically replaces the in-memory search index. May take some time depending on how many files there are.",
+		Description: "Rebuild the full diary search index. Call this after adding new diary entries or editing existing ones so the index reflects the latest content. Rescans all markdown files, recomputes all embeddings via the API, and atomically replaces the in-memory search index. May take some time depending on how many files there are. Also available as a one-shot CLI command: diary-rag --reindex",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ ReindexInput) (*mcp.CallToolResult, ReindexOutput, error) {
 		if err := BuildEmbeddingIndex(app.rootDir, app.embedURL, app.embedModel, app.outputDir); err != nil {
 			return errorResult[ReindexOutput](fmt.Sprintf("reindex error: %v", err))

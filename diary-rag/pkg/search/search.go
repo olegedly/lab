@@ -25,6 +25,13 @@ type SearchResult struct {
 	Path     string  `json:"path"`
 }
 
+// SearchOptions controls the search query including date filtering.
+type SearchOptions struct {
+	TopK   int
+	Before string
+	After  string
+}
+
 // Searcher holds the embedding index for cosine-similarity search.
 type Searcher struct {
 	chunks []ChunkWithEmbedding
@@ -44,14 +51,23 @@ func LoadFromFile(path string) (*Searcher, error) {
 }
 
 // Search finds the topK most similar chunks by cosine similarity to the query vector.
-func (s *Searcher) Search(query []float32, topK int) []SearchResult {
+// When date filtering is active (Before or After set), only "daily" journal entries
+// within the date range are searched.
+func (s *Searcher) Search(query []float32, opts SearchOptions) []SearchResult {
+	topK := opts.TopK
+	if topK <= 0 || topK > 50 {
+		topK = 5
+	}
+
+	candidates := s.filterByDate(opts.Before, opts.After)
+
 	type scored struct {
 		idx   int
 		score float64
 	}
 
-	scores := make([]scored, len(s.chunks))
-	for i, chunk := range s.chunks {
+	scores := make([]scored, len(candidates))
+	for i, chunk := range candidates {
 		scores[i] = scored{i, cosineSimilarity(query, chunk.Embedding)}
 	}
 
@@ -65,7 +81,7 @@ func (s *Searcher) Search(query []float32, topK int) []SearchResult {
 
 	results := make([]SearchResult, topK)
 	for i := 0; i < topK; i++ {
-		chunk := s.chunks[scores[i].idx]
+		chunk := candidates[scores[i].idx]
 		results[i] = SearchResult{
 			Text:     chunk.Text,
 			Score:    scores[i].score,
@@ -76,6 +92,29 @@ func (s *Searcher) Search(query []float32, topK int) []SearchResult {
 		}
 	}
 	return results
+}
+
+// filterByDate restricts search to "daily" journal entries within the given date
+// range. Returns all chunks when no date filter is set.
+func (s *Searcher) filterByDate(before, after string) []ChunkWithEmbedding {
+	if before == "" && after == "" {
+		return s.chunks
+	}
+	var result []ChunkWithEmbedding
+	for _, c := range s.chunks {
+		if c.Metadata["journal"] != "daily" {
+			continue
+		}
+		date := c.Metadata["date"]
+		if after != "" && date < after {
+			continue
+		}
+		if before != "" && date > before {
+			continue
+		}
+		result = append(result, c)
+	}
+	return result
 }
 
 // ChunkCount returns the number of indexed chunks.

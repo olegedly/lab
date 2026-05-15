@@ -41,6 +41,7 @@ func main() {
 	embedURL := flag.String("embed-url", "http://192.168.1.5:5001/v1/embeddings", "embedding API URL")
 	embedModel := flag.String("embed-model", "nomic-embed-text-v1.5", "embedding model name")
 	outputDir := flag.String("output", "output", "output directory for JSON files")
+	reindex := flag.Bool("reindex", false, "rebuild the search index and exit (alternative to the reindex_diary MCP tool)")
 	flag.Parse()
 
 	app := &App{
@@ -50,10 +51,18 @@ func main() {
 		outputDir:  resolvePath(*outputDir),
 	}
 
+	if *reindex {
+		if err := BuildEmbeddingIndex(app.rootDir, app.embedURL, app.embedModel, app.outputDir); err != nil {
+			log.Fatalf("reindex failed: %v", err)
+		}
+		fmt.Println("Reindex complete.")
+		return
+	}
+
 	corpusPath := filepath.Join(app.outputDir, "chunksWithEmbeddings.json")
 	searcher, err := search.LoadFromFile(corpusPath)
 	if err != nil {
-		log.Fatalf("Failed to load corpus: %v. Run the reindex_diary tool first.", err)
+		log.Fatalf("Failed to load corpus: %v. Run reindex first (--reindex flag or reindex_diary MCP tool).", err)
 	}
 	app.searcher = searcher
 
