@@ -6,11 +6,11 @@ import (
 	"os"
 )
 
-func WriteJson(chunks []Chunk, outputFile string) {
-	// Convert the slice of chunks into pretty-printed JSON
-	jsonData, err := json.MarshalIndent(chunks, "", "  ")
+func WriteJson(data any, outputFile string) {
+	// Convert the data into pretty-printed JSON
+	jsonData, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
-		fmt.Printf("Failed to encode chunks to JSON: %v\n", err)
+		fmt.Printf("Failed to encode data to JSON: %v\n", err)
 		return
 	}
 
@@ -22,5 +22,5 @@ func WriteJson(chunks []Chunk, outputFile string) {
 	}
 
 	// Log success
-	fmt.Printf("Successfully saved chunks to %s\n", outputFile)
+	fmt.Printf("Successfully saved data to %s\n", outputFile)
 }
