@@ -14,8 +14,8 @@ import (
 )
 
 type SearchInput struct {
-	Query string `json:"query" jsonschema:"search query,required"`
-	TopK  int    `json:"top_k" jsonschema:"maximum number of results (default 5),maximum=50"`
+	Query string `json:"query" jsonschema:"natural language query describing the topic, event, or feeling to search for,required"`
+	TopK  int    `json:"top_k" jsonschema:"number of results to return (default 5, max 50)"`
 }
 
 type SearchOutput struct {
@@ -30,7 +30,8 @@ type ReindexOutput struct {
 }
 
 type ReadNoteInput struct {
-	Filepath string `json:"filepath" jsonschema:"path to the diary note file (absolute, or relative to the diary root),required"`
+	Path     string `json:"path" jsonschema:"directory path relative to the diary root, from search_diary results,required"`
+	Filename string `json:"filename" jsonschema:"filename of the note, from search_diary results,required"`
 }
 
 type ReadNoteOutput struct {
@@ -40,7 +41,7 @@ type ReadNoteOutput struct {
 func RegisterSearchTool(server *mcp.Server, app *App) error {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "search_diary",
-		Description: "Search diary entries by semantic similarity. Returns matching text chunks with relevance scores and metadata.",
+		Description: "Search diary/journal entries by semantic similarity (not keyword matching). Use when you need to find entries about a specific topic, event, person, or feeling the user wrote about. Returns text snippets with relevance scores (0-1), dates, journal types, and file identifiers. The returned 'path' and 'filename' fields can be passed directly to read_note to retrieve full entry contents.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input SearchInput) (*mcp.CallToolResult, SearchOutput, error) {
 		if input.TopK <= 0 || input.TopK > 50 {
 			input.TopK = 5
@@ -60,7 +61,7 @@ func RegisterSearchTool(server *mcp.Server, app *App) error {
 func RegisterReindexTool(server *mcp.Server, app *App) error {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "reindex_diary",
-		Description: "Re-scan all diary markdown files, recompute embeddings, and rebuild the search index.",
+		Description: "Rebuild the full diary search index. Call this after adding new diary entries or editing existing ones so the index reflects the latest content. Rescans all markdown files, recomputes all embeddings via the API, and atomically replaces the in-memory search index. May take some time depending on how many files there are.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ ReindexInput) (*mcp.CallToolResult, ReindexOutput, error) {
 		if err := BuildEmbeddingIndex(app.rootDir, app.embedURL, app.embedModel, app.outputDir); err != nil {
 			return errorResult[ReindexOutput](fmt.Sprintf("reindex error: %v", err))
@@ -84,12 +85,9 @@ func RegisterReindexTool(server *mcp.Server, app *App) error {
 func RegisterReadNoteTool(server *mcp.Server, app *App) error {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "read_note",
-		Description: "Read the full content of a diary note by file path. Accepts an absolute path or a path relative to the diary root.",
+		Description: "Read the full contents of a diary note by its directory path and filename. Use the 'path' and 'filename' values returned by search_diary — they map directly to these inputs. The note is resolved relative to the diary root directory.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input ReadNoteInput) (*mcp.CallToolResult, ReadNoteOutput, error) {
-		target := input.Filepath
-		if !filepath.IsAbs(target) {
-			target = filepath.Join(app.rootDir, target)
-		}
+		target := filepath.Join(app.rootDir, input.Path, input.Filename)
 		content, err := os.ReadFile(target)
 		if err != nil {
 			return errorResult[ReadNoteOutput](fmt.Sprintf("read error: %v", err))

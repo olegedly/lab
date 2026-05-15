@@ -22,7 +22,11 @@ func BuildEmbeddingIndex(rootDir, embedURL, embedModel, outputDir string) error 
 	var allChunks []parser.Chunk
 	if err := traverse.TraverseAndProcessMarkdown(rootDir, func(content, filename, path string) error {
 		relPath := strings.TrimPrefix(path, rootDir+"/")
-		chunks := parser.ParseNoteToChunks(content, filename, relPath)
+		dir := filepath.Dir(relPath)
+		if dir == "." {
+			dir = ""
+		}
+		chunks := parser.ParseNoteToChunks(content, filename, dir)
 		allChunks = append(allChunks, chunks...)
 		return nil
 	}); err != nil {
