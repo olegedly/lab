@@ -64,7 +64,7 @@ func main() {
 
 	RegisterSearchTool(server, app)
 	RegisterReindexTool(server, app)
-	RegisterReadNoteTool(server)
+	RegisterReadNoteTool(server, app)
 
 	fmt.Fprintf(os.Stderr, "diary-rag MCP server started (dir=%s, output=%s)\n", app.rootDir, app.outputDir)
 	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {

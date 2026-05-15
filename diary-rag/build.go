@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"diary-rag/pkg/embed"
 	"diary-rag/pkg/parser"
@@ -20,7 +21,8 @@ func BuildEmbeddingIndex(rootDir, embedURL, embedModel, outputDir string) error 
 
 	var allChunks []parser.Chunk
 	if err := traverse.TraverseAndProcessMarkdown(rootDir, func(content, filename, path string) error {
-		chunks := parser.ParseNoteToChunks(content, filename, path)
+		relPath := strings.TrimPrefix(path, rootDir+"/")
+		chunks := parser.ParseNoteToChunks(content, filename, relPath)
 		allChunks = append(allChunks, chunks...)
 		return nil
 	}); err != nil {

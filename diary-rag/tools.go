@@ -30,7 +30,7 @@ type ReindexOutput struct {
 }
 
 type ReadNoteInput struct {
-	Filepath string `json:"filepath" jsonschema:"absolute path to the diary note file,required"`
+	Filepath string `json:"filepath" jsonschema:"path to the diary note file (absolute, or relative to the diary root),required"`
 }
 
 type ReadNoteOutput struct {
@@ -81,12 +81,16 @@ func RegisterReindexTool(server *mcp.Server, app *App) error {
 	return nil
 }
 
-func RegisterReadNoteTool(server *mcp.Server) error {
+func RegisterReadNoteTool(server *mcp.Server, app *App) error {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "read_note",
-		Description: "Read the full content of a diary note by file path.",
+		Description: "Read the full content of a diary note by file path. Accepts an absolute path or a path relative to the diary root.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input ReadNoteInput) (*mcp.CallToolResult, ReadNoteOutput, error) {
-		content, err := os.ReadFile(input.Filepath)
+		target := input.Filepath
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(app.rootDir, target)
+		}
+		content, err := os.ReadFile(target)
 		if err != nil {
 			return errorResult[ReadNoteOutput](fmt.Sprintf("read error: %v", err))
 		}
